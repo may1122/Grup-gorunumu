@@ -8,90 +8,116 @@ st.title("📊 Nöbet Analiz Paneli")
 # ================== EXCEL YÜKLE ==================
 uploaded_file = st.file_uploader("Excel dosyasını yükle", type=["xlsx"])
 
-if uploaded_file:
+if uploaded_file is None:
+    st.info("Lütfen bir Excel dosyası yükleyin.")
+    st.stop()
 
-    @st.cache_data
-    def load_data(file):
-        return pd.read_excel(file)
+# ================== VERİ OKUMA ==================
+@st.cache_data
+def load_data(file):
+    return pd.read_excel(file)
 
+try:
     df = load_data(uploaded_file)
+except Exception as e:
+    st.error(f"Dosya okunamadı: {e}")
+    st.stop()
 
-    # ================== KOLON KONTROL ==================
-    gerekli = ["TARIH", "GRUP", "ECZANE"]
-    if not all(col in df.columns for col in gerekli):
-        st.error("Excel formatı hatalı!")
-        st.stop()
+# ================== KOLON KONTROL ==================
+gerekli_kolonlar = ["TARIH", "GRUP", "ECZANE"]
 
-    # ================== TARİH ==================
-    df["TARIH"] = pd.to_datetime(df["TARIH"])
-    df["GUN_IDX"] = df["TARIH"].dt.weekday
-    df["GUN_TIPI"] = df["GUN_IDX"].apply(lambda x: "Hafta İçi" if x < 5 else "Hafta Sonu")
+eksik = [col for col in gerekli_kolonlar if col not in df.columns]
+if eksik:
+    st.error(f"Eksik kolonlar: {eksik}")
+    st.stop()
 
-    # ================== GRUP SEÇ ==================
-    grup_list = sorted(df["GRUP"].dropna().unique())
-    secilen_grup = st.selectbox("Grup seç", grup_list)
+# ================== TARİH İŞLEME ==================
+df["TARIH"] = pd.to_datetime(df["TARIH"], errors="coerce")
+df = df.dropna(subset=["TARIH"])
 
-    df = df[df["GRUP"] == secilen_grup]
+if df.empty:
+    st.error("Geçerli tarih içeren veri yok.")
+    st.stop()
 
-    # ================== 3-6-9 AY ==================
-    col1, col2, col3 = st.columns(3)
+df["GUN_IDX"] = df["TARIH"].dt.weekday
+df["GUN_TIPI"] = df["GUN_IDX"].apply(lambda x: "Hafta İçi" if x < 5 else "Hafta Sonu")
 
-    if "secim" not in st.session_state:
-        st.session_state.secim = 3
+# ================== GRUP SEÇ ==================
+gruplar = sorted(df["GRUP"].dropna().unique())
 
-    if col1.button("3 AY"):
-        st.session_state.secim = 3
-    if col2.button("6 AY"):
-        st.session_state.secim = 6
-    if col3.button("9 AY"):
-        st.session_state.secim = 9
+if not gruplar:
+    st.error("Grup bulunamadı.")
+    st.stop()
 
-    secim = st.session_state.secim
+secilen_grup = st.selectbox("Grup seç", gruplar)
 
-    max_tarih = df["TARIH"].max()
-    min_tarih = max_tarih - pd.DateOffset(months=secim)
+df = df[df["GRUP"] == secilen_grup]
 
-    filtre_df = df[df["TARIH"] >= min_tarih]
+if df.empty:
+    st.warning("Bu grupta veri yok.")
+    st.stop()
 
-    # ================== ECZANE BAZLI PIVOT ==================
-    pivot = (
-        filtre_df
-        .groupby(["ECZANE", "GUN_TIPI"])
-        .size()
-        .reset_index(name="NOBET_SAYISI")
-    )
+# ================== PERİYOT ==================
+secim = st.radio("Periyot (Ay)", [3, 6, 9], horizontal=True)
 
-    pivot_table = pivot.pivot(
-        index="ECZANE",
-        columns="GUN_TIPI",
-        values="NOBET_SAYISI"
-    ).fillna(0)
+max_tarih = df["TARIH"].max()
+min_tarih = max_tarih - pd.DateOffset(months=secim)
 
-    pivot_table["TOPLAM"] = pivot_table.sum(axis=1)
+filtre_df = df[df["TARIH"] >= min_tarih]
 
-    pivot_table = pivot_table.sort_values(by="TOPLAM", ascending=False)
+if filtre_df.empty:
+    st.warning("Seçilen tarih aralığında veri yok.")
+    st.stop()
 
-    st.subheader(f"📋 {secilen_grup} - Son {secim} Ay Eczane Bazlı Nöbet Dağılımı")
-    st.dataframe(pivot_table, use_container_width=True)
+# ================== PIVOT ==================
+pivot = (
+    filtre_df
+    .groupby(["ECZANE", "GUN_TIPI"])
+    .size()
+    .reset_index(name="NOBET_SAYISI")
+)
 
-    # ================== DENGE ANALİZİ ==================
-    ortalama = pivot_table["TOPLAM"].mean()
+if pivot.empty:
+    st.warning("Pivot oluşturulamadı.")
+    st.stop()
 
-    pivot_table["DURUM"] = pivot_table["TOPLAM"].apply(
-        lambda x: "🔴 Fazla" if x > ortalama else "🟢 Az" if x < ortalama else "🟡 Dengeli"
-    )
+pivot_table = pivot.pivot_table(
+    index="ECZANE",
+    columns="GUN_TIPI",
+    values="NOBET_SAYISI",
+    fill_value=0
+)
 
-    st.subheader("⚖️ Denge Analizi")
-    st.dataframe(pivot_table, use_container_width=True)
+pivot_table["TOPLAM"] = pivot_table.sum(axis=1)
+pivot_table = pivot_table.sort_values(by="TOPLAM", ascending=False)
 
-    # ================== GRAFİK ==================
-    fig = px.bar(
-        pivot,
-        x="ECZANE",
-        y="NOBET_SAYISI",
-        color="GUN_TIPI",
-        barmode="group",
-        title=f"{secilen_grup} - Hafta İçi / Hafta Sonu Dağılımı"
-    )
+# ================== TABLO ==================
+st.subheader(f"📋 {secilen_grup} - Son {secim} Ay")
 
-    st.plotly_chart(fig, use_container_width=True)
+st.dataframe(pivot_table, use_container_width=True)
+
+# ================== DENGE ==================
+ortalama = pivot_table["TOPLAM"].mean()
+tolerans = 1
+
+pivot_table["DURUM"] = pivot_table["TOPLAM"].apply(
+    lambda x: "🟡 Dengeli"
+    if abs(x - ortalama) <= tolerans
+    else "🔴 Fazla"
+    if x > ortalama
+    else "🟢 Az"
+)
+
+st.subheader("⚖️ Denge Analizi")
+st.dataframe(pivot_table, use_container_width=True)
+
+# ================== GRAFİK ==================
+fig = px.bar(
+    pivot,
+    x="ECZANE",
+    y="NOBET_SAYISI",
+    color="GUN_TIPI",
+    barmode="group"
+)
+
+st.plotly_chart(fig, use_container_width=True)
