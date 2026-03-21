@@ -9,22 +9,31 @@ st.title("📊 Nöbet Analiz Paneli")
 uploaded_file = st.file_uploader("Excel dosyasını yükle", type=["xlsx"])
 
 if uploaded_file:
-    df = pd.read_excel(uploaded_file)
 
-    # Tarih formatı
+    @st.cache_data
+    def load_data(file):
+        return pd.read_excel(file)
+
+    df = load_data(uploaded_file)
+
+    # ================== KOLON KONTROL ==================
+    gerekli = ["TARIH", "GRUP", "ECZANE"]
+    if not all(col in df.columns for col in gerekli):
+        st.error("Excel formatı hatalı!")
+        st.stop()
+
+    # ================== TARİH ==================
     df["TARIH"] = pd.to_datetime(df["TARIH"])
-
-    # Hafta içi / hafta sonu
     df["GUN_IDX"] = df["TARIH"].dt.weekday
     df["GUN_TIPI"] = df["GUN_IDX"].apply(lambda x: "Hafta İçi" if x < 5 else "Hafta Sonu")
 
     # ================== GRUP SEÇ ==================
-    grup_list = df["GRUP"].dropna().unique()
+    grup_list = sorted(df["GRUP"].dropna().unique())
     secilen_grup = st.selectbox("Grup seç", grup_list)
 
     df = df[df["GRUP"] == secilen_grup]
 
-    # ================== 3-6-9 AY BUTON ==================
+    # ================== 3-6-9 AY ==================
     col1, col2, col3 = st.columns(3)
 
     if "secim" not in st.session_state:
@@ -39,28 +48,50 @@ if uploaded_file:
 
     secim = st.session_state.secim
 
-    # ================== TARİH FİLTRE ==================
     max_tarih = df["TARIH"].max()
     min_tarih = max_tarih - pd.DateOffset(months=secim)
 
     filtre_df = df[df["TARIH"] >= min_tarih]
 
-    # ================== AGGREGATION ==================
+    # ================== ECZANE BAZLI PIVOT ==================
     pivot = (
         filtre_df
-        .groupby(["GUN_TIPI", "ECZANE"])
+        .groupby(["ECZANE", "GUN_TIPI"])
         .size()
         .reset_index(name="NOBET_SAYISI")
     )
 
+    pivot_table = pivot.pivot(
+        index="ECZANE",
+        columns="GUN_TIPI",
+        values="NOBET_SAYISI"
+    ).fillna(0)
+
+    pivot_table["TOPLAM"] = pivot_table.sum(axis=1)
+
+    pivot_table = pivot_table.sort_values(by="TOPLAM", ascending=False)
+
+    st.subheader(f"📋 {secilen_grup} - Son {secim} Ay Eczane Bazlı Nöbet Dağılımı")
+    st.dataframe(pivot_table, use_container_width=True)
+
+    # ================== DENGE ANALİZİ ==================
+    ortalama = pivot_table["TOPLAM"].mean()
+
+    pivot_table["DURUM"] = pivot_table["TOPLAM"].apply(
+        lambda x: "🔴 Fazla" if x > ortalama else "🟢 Az" if x < ortalama else "🟡 Dengeli"
+    )
+
+    st.subheader("⚖️ Denge Analizi")
+    st.dataframe(pivot_table, use_container_width=True)
+
     # ================== GRAFİK ==================
     fig = px.bar(
         pivot,
-        x="GUN_TIPI",
+        x="ECZANE",
         y="NOBET_SAYISI",
-        color="ECZANE",
+        color="GUN_TIPI",
         barmode="group",
-        title=f"{secilen_grup} - Son {secim} Ay Hafta İçi / Hafta Sonu Nöbet Dağılımı"
+        title=f"{secilen_grup} - Hafta İçi / Hafta Sonu Dağılımı"
     )
 
     st.plotly_chart(fig, use_container_width=True)
