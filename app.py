@@ -68,11 +68,21 @@ if uploaded_file is not None:
         color=renk
     )
 
-    # ✅ TAM SAYI ÖLÇEK
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-
-    ax.set_ylabel("Nöbet sayısı")
 
     plt.xticks(rotation=45)
 
     st.pyplot(fig, use_container_width=True)
+
+    st.markdown("### 📋 Seçilen grubun verileri")
+
+    st.dataframe(df_grup, use_container_width=True)
+
+    st.markdown("---")
+
+    # TÜM EXCEL GÖSTER
+    if st.checkbox("Tüm Excel verisini göster"):
+
+        st.markdown("### 📄 Tüm veri")
+
+        st.dataframe(df, use_container_width=True)
