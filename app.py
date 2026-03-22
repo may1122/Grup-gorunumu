@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 
 st.set_page_config(
     page_title="Nöbet Analiz",
@@ -40,6 +41,19 @@ if uploaded_file is not None:
 
     df_grup = df[df["Grup"] == secilen_grup]
 
+    # ANA GRUP HARFİ
+    ana_grup = secilen_grup[0]
+
+    renkler = {
+        "A": "blue",
+        "B": "red",
+        "C": "green",
+        "D": "orange",
+        "E": "purple",
+    }
+
+    renk = renkler.get(ana_grup, "gray")
+
     st.markdown("---")
 
     st.subheader(
@@ -50,8 +64,12 @@ if uploaded_file is not None:
 
     ax.bar(
         df_grup["Eczane"],
-        df_grup[sure]
+        df_grup[sure],
+        color=renk
     )
+
+    # ✅ TAM SAYI ÖLÇEK
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
     ax.set_ylabel("Nöbet sayısı")
 
