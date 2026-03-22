@@ -1,8 +1,4 @@
-# Streamlit ve temel paketler
-streamlit==1.26.0
-pandas>=2.0.0
-plotly>=5.20.0
-openpyxl>=3.1.2
-
-# Eğer deploy sırasında ek paket lazım olursa ekleyebilirsin
-# numpy>=1.25.0
+streamlit
+pandas
+matplotlib
+openpyxl
